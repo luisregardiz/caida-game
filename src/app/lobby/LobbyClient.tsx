@@ -24,6 +24,10 @@ export function LobbyClient({ initialTables }: LobbyClientProps) {
   const [betAmount, setBetAmount] = useState(50);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  // Delete flow
+  const [tableToDelete, setTableToDelete] = useState<string | null>(null); // id of table pending confirmation
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Subscribe to real-time changes in the tables table
   useEffect(() => {
     const channel = supabase
@@ -86,6 +90,25 @@ export function LobbyClient({ initialTables }: LobbyClientProps) {
     }
   };
 
+  const handleDeleteTable = async (tableId: string) => {
+    if (!user || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("tables")
+        .delete()
+        .eq("id", tableId)
+        .eq("host_id", user.id); // extra safety: only owner can delete
+      if (error) throw error;
+      // Realtime DELETE event will remove it from local state automatically
+    } catch (err) {
+      console.error("[LobbyClient] Delete error:", err);
+    } finally {
+      setIsDeleting(false);
+      setTableToDelete(null);
+    }
+  };
+
   const tableStatuses: Record<Table["status"], string> = {
     waiting: "Esperando jugadores",
     playing: "En juego",
@@ -136,11 +159,11 @@ export function LobbyClient({ initialTables }: LobbyClientProps) {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ delay: i * 0.05 }}
-                className="glass rounded-2xl p-5 hover:bg-white/[0.07] transition-colors cursor-pointer group"
+                className="glass rounded-2xl p-5 hover:bg-white/[0.07] transition-colors cursor-pointer group relative"
                 onClick={() => router.push(`/mesa/${table.id}`)}
               >
                 <div className="flex items-start justify-between mb-4">
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <h2 className="font-bold text-white group-hover:text-amber-400 transition-colors line-clamp-1">
                       {table.name}
                     </h2>
@@ -148,22 +171,80 @@ export function LobbyClient({ initialTables }: LobbyClientProps) {
                       {tableStatuses[table.status]}
                     </p>
                   </div>
-                  <span
-                    className={`text-xs px-2 py-1 rounded-full font-medium ${
-                      table.status === "waiting"
-                        ? "bg-green-500/20 text-green-400"
+
+                  <div className="flex items-center gap-2 ml-2 shrink-0">
+                    <span
+                      className={`text-xs px-2 py-1 rounded-full font-medium ${
+                        table.status === "waiting"
+                          ? "bg-green-500/20 text-green-400"
+                          : table.status === "playing"
+                          ? "bg-amber-500/20 text-amber-400"
+                          : "bg-white/10 text-white/40"
+                      }`}
+                    >
+                      {table.status === "waiting"
+                        ? "Abierta"
                         : table.status === "playing"
-                        ? "bg-amber-500/20 text-amber-400"
-                        : "bg-white/10 text-white/40"
-                    }`}
-                  >
-                    {table.status === "waiting"
-                      ? "Abierta"
-                      : table.status === "playing"
-                      ? "Jugando"
-                      : "Cerrada"}
-                  </span>
+                        ? "Jugando"
+                        : "Cerrada"}
+                    </span>
+
+                    {/* Delete button — only visible to the host */}
+                    {user?.id === table.host_id && (
+                      <button
+                        id={`delete-table-${table.id}`}
+                        title="Eliminar sala"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTableToDelete(
+                            tableToDelete === table.id ? null : table.id
+                          );
+                        }}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                {/* Inline delete confirmation */}
+                <AnimatePresence>
+                  {tableToDelete === table.id && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20">
+                        <p className="text-xs text-red-300 font-medium mb-3">
+                          ¿Eliminar &quot;{table.name}&quot;? Esta acción no se puede deshacer.
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            id={`cancel-delete-${table.id}`}
+                            onClick={() => setTableToDelete(null)}
+                            className="flex-1 py-1.5 rounded-lg text-xs font-medium border border-white/10 text-white/50 hover:text-white/70 transition-all"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            id={`confirm-delete-${table.id}`}
+                            onClick={() => handleDeleteTable(table.id)}
+                            disabled={isDeleting}
+                            className="flex-1 py-1.5 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-500 text-white disabled:opacity-50 transition-all"
+                          >
+                            {isDeleting ? "Eliminando..." : "Sí, eliminar"}
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 <div className="flex items-center justify-between text-sm">
                   <div className="flex items-center gap-1.5 text-amber-400">

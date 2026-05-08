@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/config/supabase/client";
 import { useUserStore } from "@/store/userStore";
@@ -15,6 +16,7 @@ interface TableClientProps {
 }
 
 export function TableClient({ table, currentUserId }: TableClientProps) {
+  const router = useRouter();
   const supabase = createClient();
   const { user, updateBalance } = useUserStore();
   const { connectedPlayers, gameState, updatePot } = useGameStore();
@@ -26,6 +28,10 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
   const [liveTable, setLiveTable] = useState<Table>(table);
   const [isBetting, setIsBetting] = useState(false);
   const [betFeedback, setBetFeedback] = useState<string | null>(null);
+
+  // Delete flow
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Subscribe to table updates via Postgres Changes
   useEffect(() => {
@@ -99,6 +105,25 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
     }
   };
 
+  /** Deletes the table and redirects the host back to the lobby. */
+  const handleDeleteTable = async () => {
+    if (!user || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("tables")
+        .delete()
+        .eq("id", table.id)
+        .eq("host_id", user.id);
+      if (error) throw error;
+      router.push("/lobby");
+    } catch (err) {
+      console.error("[TableClient] Delete error:", err);
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
   const pot = gameState?.pot ?? liveTable.pot;
   const isHost = table.host_id === currentUserId;
 
@@ -116,13 +141,31 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
           </p>
         </div>
 
-        {/* Pot */}
-        <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20">
-          <span className="text-amber-400 text-lg">💰</span>
-          <div>
-            <p className="text-xs text-amber-400/60 font-medium">POTE</p>
-            <p className="text-amber-400 font-bold text-sm">{formatChips(pot)}</p>
+        <div className="flex items-center gap-3">
+          {/* Pot */}
+          <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20">
+            <span className="text-amber-400 text-lg">💰</span>
+            <div>
+              <p className="text-xs text-amber-400/60 font-medium">POTE</p>
+              <p className="text-amber-400 font-bold text-sm">{formatChips(pot)}</p>
+            </div>
           </div>
+
+          {/* Delete room — host only */}
+          {isHost && (
+            <motion.button
+              id="delete-room-btn"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowDeleteConfirm(true)}
+              title="Eliminar sala"
+              className="w-9 h-9 flex items-center justify-center rounded-xl border border-red-500/20 text-red-400/60 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/40 transition-all"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clipRule="evenodd" />
+              </svg>
+            </motion.button>
+          )}
         </div>
       </div>
 
@@ -255,6 +298,68 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Delete room confirmation modal */}
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <>
+            <motion.div
+              key="delete-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowDeleteConfirm(false)}
+              className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm"
+            />
+            <motion.div
+              key="delete-modal"
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            >
+              <div className="glass rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-red-500/20">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-red-500/15 flex items-center justify-center shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-red-400">
+                      <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-white">Eliminar Sala</h2>
+                    <p className="text-xs text-white/40 mt-0.5">Esta acción no se puede deshacer</p>
+                  </div>
+                </div>
+
+                <p className="text-sm text-white/60 mb-6">
+                  ¿Estás seguro que quieres eliminar{" "}
+                  <span className="font-semibold text-white">&quot;{liveTable.name}&quot;</span>?
+                  Todos los jugadores conectados serán desconectados.
+                </p>
+
+                <div className="flex gap-3">
+                  <button
+                    id="cancel-delete-room"
+                    onClick={() => setShowDeleteConfirm(false)}
+                    disabled={isDeleting}
+                    className="flex-1 py-3 rounded-xl text-sm font-medium border border-white/10 text-white/50 hover:text-white/70 hover:bg-white/5 disabled:opacity-40 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    id="confirm-delete-room"
+                    onClick={handleDeleteTable}
+                    disabled={isDeleting}
+                    className="flex-1 py-3 rounded-xl text-sm font-bold bg-red-600 hover:bg-red-500 text-white disabled:opacity-50 transition-all shadow-lg shadow-red-600/20"
+                  >
+                    {isDeleting ? "Eliminando..." : "Sí, eliminar"}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
