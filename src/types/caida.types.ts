@@ -65,6 +65,10 @@ export interface LastPlay {
   card: Card;
   /** true when the card was placed on the table without capturing anything */
   wentToTable: boolean;
+  /** cards captured during this play */
+  capturedCards?: Card[];
+  /** true if this play resulted in a caída */
+  isCaida?: boolean;
 }
 
 // ---------------------------------------------------------------------------

@@ -27,9 +27,9 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
   const storeConnectedPlayers = useGameStore((state) => state.connectedPlayers);
   const connectedPlayers = useMemo(() => isSinglePlayer
     ? [
-        { userId: currentUserId, username: user?.username || "Tú", avatarUrl: null, status: "connected" as const, joinedAt: new Date().toISOString() },
-        { userId: "cpu-bot", username: "Máquina (Bot)", avatarUrl: null, status: "connected" as const, joinedAt: new Date().toISOString() }
-      ]
+      { userId: currentUserId, username: user?.username || "Tú", avatarUrl: null, status: "connected" as const, joinedAt: new Date().toISOString() },
+      { userId: "cpu-bot", username: "Máquina (Bot)", avatarUrl: null, status: "connected" as const, joinedAt: new Date().toISOString() }
+    ]
     : storeConnectedPlayers, [isSinglePlayer, currentUserId, user?.username, storeConnectedPlayers]);
 
   // Subscribe to Presence
@@ -58,8 +58,16 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
   useEffect(() => {
     if (lastPlay) {
       const playerName = connectedPlayers.find((p) => p.userId === lastPlay.playerId)?.username || "Alguien";
-      const action = lastPlay.wentToTable ? "lanzó a la mesa" : "capturó con";
-      const newLog = `${playerName} ${action} ${lastPlay.card.value} de ${lastPlay.card.suit}`;
+      let newLog = "";
+      if (lastPlay.wentToTable) {
+        newLog = `Jugador ${playerName}: Lanzó a la mesa ${lastPlay.card.value} de ${lastPlay.card.suit}`;
+      } else {
+        const capturedStr = lastPlay.capturedCards?.map(c => `${c.value} de ${c.suit}`).join(", ") || "";
+        newLog = `Jugador ${playerName}: Lanzó ${lastPlay.card.value} de ${lastPlay.card.suit} y tomó las cartas ${capturedStr}`;
+        if (lastPlay.isCaida) {
+          newLog = `💥 ¡CAÍDA! ` + newLog;
+        }
+      }
       setLogs((prev) => [newLog, ...prev].slice(0, 50));
     }
   }, [lastPlay, connectedPlayers]);
@@ -179,7 +187,7 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
   const handleDeleteTable = async () => {
     if (!user || isDeleting) return;
     setIsDeleting(true);
-    
+
     if (isSinglePlayer) {
       useGameLogicStore.getState().resetEngine();
       router.push("/lobby");
@@ -210,10 +218,15 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
       <div className="flex items-center justify-between px-6 py-4 bg-black/30 border-b border-white/10">
         <div>
           <h1 className="font-bold text-white text-lg">{liveTable.name}</h1>
-          <p className="text-xs text-white/50">
-            Apuesta: {formatChips(liveTable.bet_amount)}
+          <p className="text-xs text-white/50 flex items-center gap-3">
+            <span>Apuesta: {formatChips(liveTable.bet_amount)}</span>
             {isHost && (
-              <span className="ml-2 text-amber-400 font-medium">• Anfitrión</span>
+              <span className="text-amber-400 font-medium">• Anfitrión</span>
+            )}
+            {phase !== "idle" && phase !== "finished" && phase !== "tanda_end" && round > 0 && (
+              <span className="bg-white/10 px-2 py-0.5 rounded text-white/70">
+                Rondas restantes: {7 - round}
+              </span>
             )}
           </p>
         </div>
@@ -373,30 +386,51 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
             <motion.div
               initial={{ y: 50, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              className="flex justify-center gap-4 mt-12"
+              className="flex justify-center items-end gap-4 mt-12 w-full relative"
             >
-              {myPlayer.hand.map((card, idx) => {
-                const suitName = card.suit.slice(0, -1);
-                const imagePath = `/cards/${suitName}/${suitName}${card.value}.png`;
+              {/* Cartas en mano */}
+              <div className="flex justify-center gap-4">
+                {myPlayer.hand.map((card, idx) => {
+                  const suitName = card.suit.slice(0, -1);
+                  const imagePath = `/cards/${suitName}/${suitName}${card.value}.png`;
 
-                return (
-                  <button
-                    key={`${card.suit}-${card.value}-${idx}`}
-                    onClick={() => handlePlayCard(card)}
-                    disabled={!isMyTurn}
-                    className={`w-[68px] h-[110px] sm:w-[68px] sm:h-[110px] card-shadow  rounded-xs  bg-transparent flex items-center justify-center relative overflow-hidden transition-transform ${!isMyTurn ? "opacity-50 cursor-not-allowed" : "hover:-translate-y-4 hover:ring-2 ring-amber-400"
-                      }`}
-                  >
+                  return (
+                    <button
+                      key={`${card.suit}-${card.value}-${idx}`}
+                      onClick={() => handlePlayCard(card)}
+                      disabled={!isMyTurn}
+                      className={`w-[68px] h-[110px] sm:w-[68px] sm:h-[110px] card-shadow  rounded-xs  bg-transparent flex items-center justify-center relative overflow-hidden transition-transform ${!isMyTurn ? "opacity-50 cursor-not-allowed" : "hover:-translate-y-4 hover:ring-2 ring-amber-400"
+                        }`}
+                    >
+                      <Image
+                        src={imagePath}
+                        alt={`${card.value} de ${card.suit}`}
+                        fill
+                        className="object-contain pointer-events-none"
+                        unoptimized
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Mazo de cartas recogidas (Renderizado Condicional) */}
+              {myPlayer.captured && myPlayer.captured.length > 0 && (
+                <div className="flex flex-col items-center justify-center ml-8 opacity-90 hover:opacity-100 transition-opacity absolute right-0 -bottom-8">
+                  <div className="relative w-[68px] h-[110px] sm:w-[68px] sm:h-[110px] card-shadow rounded-sm overflow-hidden">
                     <Image
-                      src={imagePath}
-                      alt={`${card.value} de ${card.suit}`}
+                      src="/cards/additions/cardBack.png"
+                      alt="Cartas recogidas"
                       fill
                       className="object-contain pointer-events-none"
                       unoptimized
                     />
-                  </button>
-                );
-              })}
+                  </div>
+                  <div className="mt-2 px-3 py-1 bg-amber-500/20 border border-amber-500/50 text-amber-400 text-xs font-bold rounded-full">
+                    {myPlayer.captured.length} recolectadas
+                  </div>
+                </div>
+              )}
             </motion.div>
           )}
         </div>
@@ -544,7 +578,7 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
               <div className="glass rounded-2xl p-8 w-full max-w-md shadow-2xl border border-white/20 text-center">
                 <h2 className="text-3xl font-black text-amber-400 mb-2">Fin de Tanda</h2>
                 <p className="text-white/60 text-sm mb-6">Se agotaron las 40 cartas.</p>
-                
+
                 <div className="space-y-4 mb-8 text-left">
                   {players.map((p) => {
                     const name = connectedPlayers.find((c) => c.userId === p.id)?.username || "Jugador";
@@ -619,7 +653,7 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                 <h2 className={`text-4xl font-black mb-2 ${winnerId === currentUserId ? 'text-amber-400' : 'text-red-400'}`}>
                   {winnerId === currentUserId ? "¡GANASTE!" : "PERDISTE"}
                 </h2>
-                
+
                 <p className="text-white/60 text-sm mb-6">
                   {winnerId === currentUserId ? "Alcanzaste los 24 puntos primero." : "Tu oponente alcanzó los 24 puntos."}
                 </p>

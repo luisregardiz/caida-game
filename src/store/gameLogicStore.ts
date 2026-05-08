@@ -332,6 +332,8 @@ export const useGameLogicStore = create<GameLogicStore>()(
             playerId,
             card,
             wentToTable: captured.length === 0,
+            capturedCards: captured.length > 0 ? captured : undefined,
+            isCaida,
         };
 
         // --- Determine next turn ---
