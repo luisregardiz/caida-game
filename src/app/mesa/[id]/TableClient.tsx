@@ -381,58 +381,60 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
             </p>
           </motion.div>
 
-          {/* Player Hand */}
-          {myPlayer && myPlayer.hand && myPlayer.hand.length > 0 && (
-            <motion.div
-              initial={{ y: 50, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              className="flex justify-center items-end gap-4 mt-12 w-full relative"
-            >
-              {/* Cartas en mano */}
-              <div className="flex justify-center gap-4">
-                {myPlayer.hand.map((card, idx) => {
-                  const suitName = card.suit.slice(0, -1);
-                  const imagePath = `/cards/${suitName}/${suitName}${card.value}.png`;
+          <div className="w-full relative min-h-32">
+            {myPlayer && myPlayer.hand && myPlayer.hand.length > 0 && (
+              <motion.div
+                initial={{ y: 50, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                className="flex justify-center items-end gap-4 mt-12 "
+              >
+                {/* Cartas en mano */}
+                <div className="flex justify-center gap-4">
+                  {myPlayer.hand.map((card, idx) => {
+                    const suitName = card.suit.slice(0, -1);
+                    const imagePath = `/cards/${suitName}/${suitName}${card.value}.png`;
 
-                  return (
-                    <button
-                      key={`${card.suit}-${card.value}-${idx}`}
-                      onClick={() => handlePlayCard(card)}
-                      disabled={!isMyTurn}
-                      className={`w-[68px] h-[110px] sm:w-[68px] sm:h-[110px] card-shadow  rounded-xs  bg-transparent flex items-center justify-center relative overflow-hidden transition-transform ${!isMyTurn ? "opacity-50 cursor-not-allowed" : "hover:-translate-y-4 hover:ring-2 ring-amber-400"
-                        }`}
-                    >
-                      <Image
-                        src={imagePath}
-                        alt={`${card.value} de ${card.suit}`}
-                        fill
-                        className="object-contain pointer-events-none"
-                        unoptimized
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Mazo de cartas recogidas (Renderizado Condicional) */}
-              {myPlayer.captured && myPlayer.captured.length > 0 && (
-                <div className="flex flex-col items-center justify-center ml-8 opacity-90 hover:opacity-100 transition-opacity absolute right-0 -bottom-8">
-                  <div className="relative w-[68px] h-[110px] sm:w-[68px] sm:h-[110px] card-shadow rounded-sm overflow-hidden">
-                    <Image
-                      src="/cards/additions/cardBack.png"
-                      alt="Cartas recogidas"
-                      fill
-                      className="object-contain pointer-events-none"
-                      unoptimized
-                    />
-                  </div>
-                  <div className="mt-2 px-3 py-1 bg-amber-500/20 border border-amber-500/50 text-amber-400 text-xs font-bold rounded-full">
-                    {myPlayer.captured.length} recolectadas
-                  </div>
+                    return (
+                      <button
+                        key={`${card.suit}-${card.value}-${idx}`}
+                        onClick={() => handlePlayCard(card)}
+                        disabled={!isMyTurn}
+                        className={`w-[68px] h-[110px] sm:w-[68px] sm:h-[110px] card-shadow  rounded-xs  bg-transparent flex items-center justify-center relative overflow-hidden transition-transform ${!isMyTurn ? "opacity-50 cursor-not-allowed" : "hover:-translate-y-4 hover:ring-2 ring-amber-400"
+                          }`}
+                      >
+                        <Image
+                          src={imagePath}
+                          alt={`${card.value} de ${card.suit}`}
+                          fill
+                          className="object-contain pointer-events-none"
+                          unoptimized
+                        />
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
-            </motion.div>
-          )}
+
+
+              </motion.div>
+            )}
+            {/* Mazo de cartas recogidas (Renderizado Condicional) */}
+            {myPlayer && myPlayer.captured && myPlayer.captured.length > 0 && (
+              <div className="flex flex-col items-center justify-center ml-8 opacity-90 hover:opacity-100 transition-opacity absolute right-0 -bottom-8">
+                <div className="relative w-[68px] h-[110px] sm:w-[68px] sm:h-[110px] card-shadow rounded-sm overflow-hidden">
+                  <Image
+                    src="/cards/additions/cardBack.png"
+                    alt="Cartas recogidas"
+                    fill
+                    className="object-contain pointer-events-none"
+                    unoptimized
+                  />
+                </div>
+                <div className="mt-2 px-3 py-1 bg-amber-500/20 border border-amber-500/50 text-amber-400 text-xs font-bold rounded-full">
+                  {myPlayer.captured.length} recolectadas
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Logs Sidebar */}
