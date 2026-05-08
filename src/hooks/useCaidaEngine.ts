@@ -57,7 +57,15 @@ export function useCaidaEngine(tableId: string) {
 
   // ── Store slices ──────────────────────────────────────────────────────────
   const { user } = useUserStore();
-  const { connectedPlayers } = useGameStore();
+  const isSinglePlayer = tableId === "singleplayer";
+  
+  const storeConnectedPlayers = useGameStore((state) => state.connectedPlayers);
+  const connectedPlayers = isSinglePlayer 
+    ? [
+        { userId: user?.id || "local", username: user?.username || "Tú", avatarUrl: null, status: "connected", joinedAt: new Date().toISOString() },
+        { userId: "cpu-bot", username: "Máquina (Bot)", avatarUrl: null, status: "connected", joinedAt: new Date().toISOString() }
+      ]
+    : storeConnectedPlayers;
   const {
     initGame,
     playCard,
@@ -79,7 +87,7 @@ export function useCaidaEngine(tableId: string) {
 
   // ── Channel setup ─────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!tableId) return;
+    if (!tableId || isSinglePlayer) return;
 
     const channel = supabase.channel(`game:${tableId}`);
     channelRef.current = channel;
@@ -89,9 +97,7 @@ export function useCaidaEngine(tableId: string) {
       "broadcast",
       { event: "PLAY_CARD" },
       ({ payload }: { payload: PlayCardBroadcast }) => {
-        // Ignore our own reflected broadcasts
         if (payload.playerId === user?.id) return;
-
         try {
           playCard(payload.playerId, payload.card);
         } catch (err) {
@@ -100,7 +106,7 @@ export function useCaidaEngine(tableId: string) {
       }
     );
 
-    // Listen for game-init (host broadcasts this to sync player order)
+    // Listen for game-init
     channel.on(
       "broadcast",
       { event: "GAME_INIT" },
@@ -109,14 +115,42 @@ export function useCaidaEngine(tableId: string) {
       }
     );
 
-    channel.subscribe();
+    // State Sync for reconnects
+    channel.on(
+      "broadcast",
+      { event: "REQUEST_STATE" },
+      () => {
+        const state = useGameLogicStore.getState();
+        if (state.phase !== "idle") {
+           channel.send({
+             type: "broadcast", 
+             event: "SYNC_STATE", 
+             payload: { state } 
+           });
+        }
+      }
+    );
+
+    channel.on(
+      "broadcast",
+      { event: "SYNC_STATE" },
+      ({ payload }) => {
+         useGameLogicStore.setState(payload.state);
+      }
+    );
+
+    channel.subscribe(async (status) => {
+      if (status === "SUBSCRIBED") {
+         channel.send({ type: "broadcast", event: "REQUEST_STATE" });
+      }
+    });
 
     return () => {
       supabase.removeChannel(channel);
-      resetEngine();
+      // No reseteamos el motor aquí para permitir la persistencia en F5.
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableId]);
+  }, [tableId, isSinglePlayer]);
 
   // ── Host: auto-start when 2 players are connected ─────────────────────────
   useEffect(() => {
@@ -142,13 +176,34 @@ export function useCaidaEngine(tableId: string) {
     // Initialise locally
     initGame(playerIds, initialDeck, initialDealerId);
 
-    // Broadcast to all participants so their engines start with the same order and same deck
-    channelRef.current?.send({
-      type: "broadcast",
-      event: "GAME_INIT",
-      payload: { playerIds, deck: initialDeck, dealerId: initialDealerId } satisfies GameInitBroadcast,
-    });
-  }, [connectedPlayers, phase, user, initGame]);
+    // Broadcast to all participants
+    if (!isSinglePlayer) {
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "GAME_INIT",
+        payload: { playerIds, deck: initialDeck, dealerId: initialDealerId } satisfies GameInitBroadcast,
+      });
+    }
+  }, [connectedPlayers, phase, user, initGame, isSinglePlayer]);
+
+  // ── Bot Turn ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (phase !== "playing") return;
+    
+    if (currentTurn === "cpu-bot") {
+      const botTimer = setTimeout(() => {
+        const state = useGameLogicStore.getState();
+        const botPlayer = state.players.find(p => p.id === "cpu-bot");
+        
+        if (botPlayer && botPlayer.hand.length > 0) {
+          const randomCard = botPlayer.hand[Math.floor(Math.random() * botPlayer.hand.length)];
+          state.playCard("cpu-bot", randomCard);
+        }
+      }, 1500);
+
+      return () => clearTimeout(botTimer);
+    }
+  }, [currentTurn, phase]);
 
   // ── handlePlayCard (public API) ───────────────────────────────────────────
   /**
@@ -160,22 +215,23 @@ export function useCaidaEngine(tableId: string) {
    */
   const handlePlayCard = useCallback(
     (card: Card): PointEvent[] => {
-      if (!user) throw new Error("No authenticated user.");
+      if (!user && !isSinglePlayer) throw new Error("No authenticated user.");
       if (!isMyTurn) throw new Error("It is not your turn.");
 
-      // Apply locally (throws on invalid play — let the UI handle this)
-      const events = playCard(user.id, card);
+      const myId = user?.id || "local";
+      const events = playCard(myId, card);
 
-      // Broadcast to opponents
-      channelRef.current?.send({
-        type: "broadcast",
-        event: "PLAY_CARD",
-        payload: { playerId: user.id, card } satisfies PlayCardBroadcast,
-      });
+      if (!isSinglePlayer) {
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "PLAY_CARD",
+          payload: { playerId: myId, card } satisfies PlayCardBroadcast,
+        });
+      }
 
       return events;
     },
-    [user, isMyTurn, playCard]
+    [user, isMyTurn, playCard, isSinglePlayer]
   );
 
   // ── Return ─────────────────────────────────────────────────────────────────

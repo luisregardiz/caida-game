@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { createClient } from "@/config/supabase/client";
 import { useGameStore } from "@/store/gameStore";
 import { useUserStore } from "@/store/userStore";
+import { useGameLogicStore } from "@/store/gameLogicStore";
 import type { PlayerPresence } from "@/types/game.types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -48,6 +49,18 @@ export function useTablePresence(tableId: string) {
       })
       .on("presence", { event: "leave" }, ({ leftPresences }) => {
         console.log("[Presence] Player left:", leftPresences);
+        const { phase } = useGameLogicStore.getState();
+        
+        // Si alguien se va y no soy yo, y estamos jugando
+        const opponentLeft = leftPresences.some(p => p.userId !== user.id);
+        
+        if (opponentLeft && (phase === "playing" || phase === "dealing")) {
+          alert("El oponente se ha desconectado. La partida se ha cancelado.");
+          
+          supabase.from("tables").update({ status: "finished" }).eq("id", tableId).then(() => {
+            window.location.href = "/lobby";
+          });
+        }
       })
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {

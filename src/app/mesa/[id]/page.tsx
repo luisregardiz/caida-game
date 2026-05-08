@@ -19,14 +19,31 @@ export default async function MesaPage({ params }: MesaPageProps) {
 
   if (!user) redirect("/login");
 
-  // Fetch table data
-  const { data: table, error } = await supabase
-    .from("tables")
-    .select("*")
-    .eq("id", id)
-    .single();
+  let table: Table | null = null;
 
-  if (error || !table) notFound();
+  if (id === "singleplayer") {
+    table = {
+      id: "singleplayer",
+      name: "Single Player vs CPU",
+      host_id: user.id,
+      bet_amount: 0,
+      pot: 0,
+      status: "playing",
+      max_players: 2,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as Table;
+  } else {
+    // Fetch table data
+    const { data, error } = await supabase
+      .from("tables")
+      .select("*")
+      .eq("id", id)
+      .single();
+    
+    if (error || !data) notFound();
+    table = data as Table;
+  }
 
   return (
     <>

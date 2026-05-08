@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/config/supabase/client";
@@ -8,6 +8,7 @@ import { useUserStore } from "@/store/userStore";
 import { useGameStore } from "@/store/gameStore";
 import { useTablePresence } from "@/hooks/useTablePresence";
 import { useCaidaEngine } from "@/hooks/useCaidaEngine";
+import { useGameLogicStore } from "@/store/gameLogicStore";
 import { formatChips, getAvatarUrl } from "@/lib/utils";
 import type { Table } from "@/types/database.types";
 import Image from "next/image";
@@ -21,7 +22,15 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
   const router = useRouter();
   const supabase = createClient();
   const { user, updateBalance } = useUserStore();
-  const { connectedPlayers, gameState, updatePot } = useGameStore();
+  const { gameState, updatePot } = useGameStore();
+  const isSinglePlayer = table.id === "singleplayer";
+  const storeConnectedPlayers = useGameStore((state) => state.connectedPlayers);
+  const connectedPlayers = useMemo(() => isSinglePlayer
+    ? [
+        { userId: currentUserId, username: user?.username || "Tú", avatarUrl: null, status: "connected" as const, joinedAt: new Date().toISOString() },
+        { userId: "cpu-bot", username: "Máquina (Bot)", avatarUrl: null, status: "connected" as const, joinedAt: new Date().toISOString() }
+      ]
+    : storeConnectedPlayers, [isSinglePlayer, currentUserId, user?.username, storeConnectedPlayers]);
 
   // Subscribe to Presence
   useTablePresence(table.id);
@@ -168,6 +177,13 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
   const handleDeleteTable = async () => {
     if (!user || isDeleting) return;
     setIsDeleting(true);
+    
+    if (isSinglePlayer) {
+      useGameLogicStore.getState().resetEngine();
+      router.push("/lobby");
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from("tables")

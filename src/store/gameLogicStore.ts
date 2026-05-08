@@ -15,6 +15,7 @@
  */
 
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import {
     generateDeck,
     shuffleDeck,
@@ -112,9 +113,11 @@ function makePlayer(id: string): EnginePlayer {
 // Store implementation
 // ---------------------------------------------------------------------------
 
-export const useGameLogicStore = create<GameLogicStore>()((set, get) => ({
-    // Spread initial state
-    ...INITIAL_STATE,
+export const useGameLogicStore = create<GameLogicStore>()(
+  persist(
+    (set, get) => ({
+      // Spread initial state
+      ...INITIAL_STATE,
 
     // ── initGame ──────────────────────────────────────────────────────────────
     initGame(
@@ -417,10 +420,16 @@ export const useGameLogicStore = create<GameLogicStore>()((set, get) => ({
         }
     },
 
-    // ── resetEngine ───────────────────────────────────────────────────────────
+    // ── resetEngine ──────────────────────────────────────────────────────────
     resetEngine() {
         set(INITIAL_STATE);
+        if (typeof window !== 'undefined') {
+            sessionStorage.removeItem('caida-game-storage');
+        }
     },
+}), {
+  name: "caida-game-storage",
+  storage: createJSONStorage(() => sessionStorage),
 }));
 
 // ---------------------------------------------------------------------------
