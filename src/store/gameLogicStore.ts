@@ -81,6 +81,11 @@ export interface GameLogicStore extends EngineState {
      */
     scoreRound: () => void;
 
+    /**
+     * Starts the next Tanda (40 cards) by alternating the dealer and shuffling a new deck.
+     */
+    nextTanda: () => void;
+
     // ── Utilities ────────────────────────────────────────────────────────────
     /** Full reset — use when navigating away from the table. */
     resetEngine: () => void;
@@ -355,22 +360,24 @@ export const useGameLogicStore = create<GameLogicStore>()(
     scoreRound() {
         const { players, deck } = get();
 
-        // Build a map: playerId → number of captured cards
-        const captureMap = new Map<string, number>(
-            players.map((p) => [p.id, p.captured.length]),
-        );
+        let updatedPlayers = [...players];
 
-        // Determine mayorCartas event
-        const mayorEvents = resolveMayorCartas(captureMap);
+        // --- Determine mayorCartas event ONLY if deck is empty (End of Tanda) ---
+        if (deck.length === 0) {
+            const captureMap = new Map<string, number>(
+                players.map((p) => [p.id, p.captured.length]),
+            );
+            const mayorEvents = resolveMayorCartas(captureMap);
 
-        // Apply mayorCartas points
-        let updatedPlayers = players.map((p) => {
-            const ev = mayorEvents.find((e) => e.forPlayerId === p.id);
-            if (!ev) return p;
-            return { ...p, score: p.score + calculatePoints(ev) };
-        });
+            // Apply mayorCartas points
+            updatedPlayers = players.map((p) => {
+                const ev = mayorEvents.find((e) => e.forPlayerId === p.id);
+                if (!ev) return p;
+                return { ...p, score: p.score + calculatePoints(ev) };
+            });
+        }
 
-        // Check win condition
+        // --- Check win condition ---
         const scoreMap = new Map<string, number>(
             updatedPlayers.map((p) => [p.id, p.score]),
         );
@@ -381,43 +388,50 @@ export const useGameLogicStore = create<GameLogicStore>()(
             return;
         }
 
-        // --- More rounds to play? ---
-        const cardsNeeded = players.length * 3;
-
-        if (deck.length >= cardsNeeded) {
-            // Reset hands for next deal (captured cards stay; cantos will be re-detected)
-            updatedPlayers = updatedPlayers.map((p) => ({
-                ...p,
-                hand: [],
-                cantos: [],
-            }));
-            set({ players: updatedPlayers, phase: "dealing" });
-            get().dealRound();
-        } else {
-            // Reshuffle all captured cards back into a fresh deck and start over
-            const newDeck = shuffleDeck(generateDeck());
-            const currentDealerId = get().dealerId;
-            const newDealerId =
-                updatedPlayers.find((p) => p.id !== currentDealerId)?.id ??
-                updatedPlayers[0].id;
-
-            // Reset captured piles for a new hand, but preserve scores
-            updatedPlayers = updatedPlayers.map((p) => ({
-                ...p,
-                hand: [],
-                captured: [],
-                cantos: [],
-            }));
-
-            set({
-                players: updatedPlayers,
-                deck: newDeck,
-                phase: "dealing",
-                round: 0,
-                dealerId: newDealerId,
-            });
-            get().dealRound();
+        // --- Check if Tanda has ended ---
+        if (deck.length === 0) {
+            set({ players: updatedPlayers, phase: "tanda_end" });
+            return;
         }
+
+        // --- More rounds to play in the current Tanda ---
+        // Reset hands for next deal (captured cards stay; cantos will be re-detected)
+        updatedPlayers = updatedPlayers.map((p) => ({
+            ...p,
+            hand: [],
+            cantos: [],
+        }));
+        set({ players: updatedPlayers, phase: "dealing" });
+        get().dealRound();
+    },
+
+    // ── nextTanda ────────────────────────────────────────────────────────────
+    nextTanda() {
+        const { players, dealerId } = get();
+        
+        // Alternancia del repartidor: El que no repartió, reparte
+        const newDealerId =
+            players.find((p) => p.id !== dealerId)?.id ??
+            players[0].id;
+
+        const newDeck = shuffleDeck(generateDeck());
+
+        // Reset captured piles for a new Tanda, but preserve scores
+        const updatedPlayers = players.map((p) => ({
+            ...p,
+            hand: [],
+            captured: [],
+            cantos: [],
+        }));
+
+        set({
+            players: updatedPlayers,
+            deck: newDeck,
+            phase: "dealing",
+            round: 0,
+            dealerId: newDealerId,
+        });
+        get().dealRound();
     },
 
     // ── resetEngine ──────────────────────────────────────────────────────────

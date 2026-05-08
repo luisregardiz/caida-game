@@ -352,8 +352,8 @@ export function calculatePoints(event: PointEvent): number {
       }
       return POINTS[event.canto.type] ?? 0;
     case "mayorCartas":
-      // +1 base for having the majority + 1 per each card over 20
-      return POINTS.mayorCartas + Math.max(0, event.extraCards - 20);
+      // +1 point per each card collected over 20
+      return Math.max(0, event.extraCards - 20);
     default:
       // Exhaustive check
       return 0;

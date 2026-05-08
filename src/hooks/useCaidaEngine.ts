@@ -234,6 +234,18 @@ export function useCaidaEngine(tableId: string) {
     [user, isMyTurn, playCard, isSinglePlayer]
   );
 
+  // ── handleNextTanda ───────────────────────────────────────────────────────
+  const handleNextTanda = useCallback(() => {
+    useGameLogicStore.getState().nextTanda();
+    if (!isSinglePlayer) {
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "SYNC_STATE",
+        payload: { state: useGameLogicStore.getState() },
+      });
+    }
+  }, [isSinglePlayer]);
+
   // ── Return ─────────────────────────────────────────────────────────────────
   return {
     // Player state
@@ -252,6 +264,7 @@ export function useCaidaEngine(tableId: string) {
 
     // Actions
     handlePlayCard,
+    handleNextTanda,
 
     // Raw access (for components that need it)
     players,

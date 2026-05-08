@@ -46,6 +46,8 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
     lastPlay,
     dealerId,
     round,
+    winnerId,
+    handleNextTanda,
   } = useCaidaEngine(table.id);
 
   const [logs, setLogs] = useState<string[]>([]);
@@ -515,6 +517,131 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                     {isDeleting ? "Eliminando..." : "Sí, eliminar"}
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* End of Tanda Modal */}
+      <AnimatePresence>
+        {phase === "tanda_end" && (
+          <>
+            <motion.div
+              key="tanda-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div
+              key="tanda-modal"
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 10 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            >
+              <div className="glass rounded-2xl p-8 w-full max-w-md shadow-2xl border border-white/20 text-center">
+                <h2 className="text-3xl font-black text-amber-400 mb-2">Fin de Tanda</h2>
+                <p className="text-white/60 text-sm mb-6">Se agotaron las 40 cartas.</p>
+                
+                <div className="space-y-4 mb-8 text-left">
+                  {players.map((p) => {
+                    const name = connectedPlayers.find((c) => c.userId === p.id)?.username || "Jugador";
+                    const isMe = p.id === currentUserId;
+                    return (
+                      <div key={p.id} className={`p-4 rounded-xl flex justify-between items-center ${isMe ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-white/5 border border-white/10'}`}>
+                        <div>
+                          <p className="font-bold text-white">{name} {isMe && "(Tú)"}</p>
+                          <p className="text-xs text-white/50">Cartas recogidas: <span className="text-amber-400 font-bold">{p.captured.length}</span></p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-white/50 mb-0.5">Puntos Totales</p>
+                          <p className="text-2xl font-black text-white">{p.score}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleDeleteTable}
+                    className="flex-1 py-3 rounded-xl text-sm font-medium border border-white/10 text-white/50 hover:text-white/70 hover:bg-white/5 transition-all"
+                  >
+                    Retirarme
+                  </button>
+                  {(isHost || isSinglePlayer) ? (
+                    <button
+                      onClick={handleNextTanda}
+                      className="flex-1 py-3 rounded-xl text-sm font-bold bg-amber-500 hover:bg-amber-400 text-black transition-all shadow-lg shadow-amber-500/20"
+                    >
+                      Continuar
+                    </button>
+                  ) : (
+                    <button
+                      disabled
+                      className="flex-1 py-3 rounded-xl text-sm font-bold bg-white/10 text-white/50 transition-all cursor-not-allowed"
+                    >
+                      Esperando al host...
+                    </button>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Game Over Modal */}
+      <AnimatePresence>
+        {phase === "finished" && winnerId && (
+          <>
+            <motion.div
+              key="gameover-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40 bg-black/90 backdrop-blur-md"
+            />
+            <motion.div
+              key="gameover-modal"
+              initial={{ opacity: 0, scale: 0.8, y: 40 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8, y: 20 }}
+              transition={{ type: "spring", bounce: 0.5 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            >
+              <div className="glass rounded-3xl p-8 w-full max-w-sm shadow-2xl border border-white/10 text-center">
+                <div className="text-6xl mb-4">
+                  {winnerId === currentUserId ? "🏆" : "💔"}
+                </div>
+                <h2 className={`text-4xl font-black mb-2 ${winnerId === currentUserId ? 'text-amber-400' : 'text-red-400'}`}>
+                  {winnerId === currentUserId ? "¡GANASTE!" : "PERDISTE"}
+                </h2>
+                
+                <p className="text-white/60 text-sm mb-6">
+                  {winnerId === currentUserId ? "Alcanzaste los 24 puntos primero." : "Tu oponente alcanzó los 24 puntos."}
+                </p>
+
+                <div className="bg-black/40 rounded-xl p-4 mb-8">
+                  {players.map((p) => {
+                    const name = connectedPlayers.find((c) => c.userId === p.id)?.username || "Jugador";
+                    return (
+                      <div key={p.id} className="flex justify-between items-center py-2 border-b border-white/5 last:border-0">
+                        <span className="text-white/70 text-sm">{name}</span>
+                        <span className="text-xl font-bold text-white">{p.score} <span className="text-xs text-white/40 font-normal">pts</span></span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={handleDeleteTable}
+                  className="w-full py-4 rounded-xl text-sm font-bold bg-white text-black hover:bg-gray-200 transition-all"
+                >
+                  Volver al Lobby
+                </button>
               </div>
             </motion.div>
           </>

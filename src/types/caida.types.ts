@@ -100,6 +100,7 @@ export type RoundPhase =
   | "dealing"    // Cards being distributed
   | "playing"    // Players playing cards
   | "scoring"    // Tallying round points
+  | "tanda_end"  // 40 cards exhausted, waiting for user to start next tanda
   | "finished";  // A player has reached 24 points
 
 export interface EngineState {
