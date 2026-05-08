@@ -25,6 +25,7 @@ import { createClient } from "@/config/supabase/client";
 import { useGameLogicStore } from "@/store/gameLogicStore";
 import { useGameStore } from "@/store/gameStore";
 import { useUserStore } from "@/store/userStore";
+import { generateDeck, shuffleDeck } from "@/lib/caidaRules";
 import type { Card, PointEvent } from "@/types/caida.types";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -39,6 +40,8 @@ interface PlayCardBroadcast {
 
 interface GameInitBroadcast {
   playerIds: string[]; // Ordered player IDs (determines turn order)
+  deck: Card[];
+  dealerId: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -66,6 +69,7 @@ export function useCaidaEngine(tableId: string) {
     winnerId,
     lastPlay,
     round,
+    dealerId,
   } = useGameLogicStore();
 
   // ── Derived conveniences ───────────────────────────────────────────────────
@@ -101,7 +105,7 @@ export function useCaidaEngine(tableId: string) {
       "broadcast",
       { event: "GAME_INIT" },
       ({ payload }: { payload: GameInitBroadcast }) => {
-        initGame(payload.playerIds);
+        initGame(payload.playerIds, payload.deck, payload.dealerId);
       }
     );
 
@@ -129,14 +133,20 @@ export function useCaidaEngine(tableId: string) {
 
     const playerIds = sorted.map((p) => p.userId);
 
-    // Initialise locally
-    initGame(playerIds);
+    // Generate a single shuffled deck for both host and opponent
+    const initialDeck = shuffleDeck(generateDeck());
+    
+    // Pick a random initial dealer
+    const initialDealerId = playerIds[Math.floor(Math.random() * playerIds.length)];
 
-    // Broadcast to all participants so their engines start with the same order
+    // Initialise locally
+    initGame(playerIds, initialDeck, initialDealerId);
+
+    // Broadcast to all participants so their engines start with the same order and same deck
     channelRef.current?.send({
       type: "broadcast",
       event: "GAME_INIT",
-      payload: { playerIds } satisfies GameInitBroadcast,
+      payload: { playerIds, deck: initialDeck, dealerId: initialDealerId } satisfies GameInitBroadcast,
     });
   }, [connectedPlayers, phase, user, initGame]);
 
@@ -182,6 +192,7 @@ export function useCaidaEngine(tableId: string) {
     phase,
     round,
     winnerId,
+    dealerId,
 
     // Actions
     handlePlayCard,

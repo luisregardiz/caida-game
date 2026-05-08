@@ -7,8 +7,10 @@ import { createClient } from "@/config/supabase/client";
 import { useUserStore } from "@/store/userStore";
 import { useGameStore } from "@/store/gameStore";
 import { useTablePresence } from "@/hooks/useTablePresence";
+import { useCaidaEngine } from "@/hooks/useCaidaEngine";
 import { formatChips, getAvatarUrl } from "@/lib/utils";
 import type { Table } from "@/types/database.types";
+import Image from "next/image";
 
 interface TableClientProps {
   table: Table;
@@ -23,6 +25,65 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
 
   // Subscribe to Presence
   useTablePresence(table.id);
+
+  // Initialize Caida Engine
+  const {
+    myPlayer,
+    tableCards,
+    isMyTurn,
+    phase,
+    handlePlayCard,
+    players,
+    lastPlay,
+    dealerId,
+    round,
+  } = useCaidaEngine(table.id);
+
+  const [logs, setLogs] = useState<string[]>([]);
+  const [lastLoggedRoundCantos, setLastLoggedRoundCantos] = useState(-1);
+  const [lastLoggedDealerRound, setLastLoggedDealerRound] = useState(-1);
+
+  // Log de Jugadas (Cartas)
+  useEffect(() => {
+    if (lastPlay) {
+      const playerName = connectedPlayers.find((p) => p.userId === lastPlay.playerId)?.username || "Alguien";
+      const action = lastPlay.wentToTable ? "lanzó a la mesa" : "capturó con";
+      const newLog = `${playerName} ${action} ${lastPlay.card.value} de ${lastPlay.card.suit}`;
+      setLogs((prev) => [newLog, ...prev].slice(0, 50));
+    }
+  }, [lastPlay, connectedPlayers]);
+
+  // Log del Repartidor
+  useEffect(() => {
+    if (dealerId && phase !== 'idle' && phase !== 'finished' && round > lastLoggedDealerRound) {
+      const dealerName = connectedPlayers.find(p => p.userId === dealerId)?.username || "El sistema";
+      setLogs((prev) => [`🎲 ${dealerName} ha repartido las cartas. (Mano ${round})`, ...prev].slice(0, 50));
+      setLastLoggedDealerRound(round);
+    }
+  }, [dealerId, round, phase, connectedPlayers, lastLoggedDealerRound]);
+
+  // Log de Cantos
+  useEffect(() => {
+    if (round > lastLoggedRoundCantos && players.some(p => p.cantos && p.cantos.length > 0)) {
+      const cantosLogs = players
+        .filter(p => p.cantos.length > 0)
+        .map(p => {
+          const name = connectedPlayers.find(c => c.userId === p.id)?.username || "Alguien";
+          return `🎤 ${name} cantó: ${p.cantos[0].type.toUpperCase()}`;
+        });
+
+      if (cantosLogs.length > 0) {
+        setLogs((prev) => [...cantosLogs, ...prev].slice(0, 50));
+      }
+      setLastLoggedRoundCantos(round);
+    } else if (round > lastLoggedRoundCantos && players.length > 0) {
+      // Si nadie cantó, igual actualizamos el estado para no volver a evaluar esta ronda.
+      // Se evalúa sólo cuando players.length > 0 para evitar falsos positivos iniciales.
+      if (players[0].hand.length > 0) {
+        setLastLoggedRoundCantos(round);
+      }
+    }
+  }, [round, players, connectedPlayers, lastLoggedRoundCantos]);
 
   // Live table state
   const [liveTable, setLiveTable] = useState<Table>(table);
@@ -74,7 +135,7 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
       const newBalance = user.balance - liveTable.bet_amount;
       const newPot = liveTable.pot + liveTable.bet_amount;
 
-      // Update user balance
+
       const { error: balanceError } = await supabase
         .from("profiles")
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -83,7 +144,6 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
 
       if (balanceError) throw balanceError;
 
-      // Update table pot
       const { error: potError } = await supabase
         .from("tables")
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -92,7 +152,6 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
 
       if (potError) throw potError;
 
-      // Optimistic update in Zustand
       updateBalance(newBalance);
       updatePot(liveTable.bet_amount);
       setBetFeedback(`✅ Apostaste ${formatChips(liveTable.bet_amount)}`);
@@ -190,74 +249,159 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                     Esperando jugadores…
                   </motion.p>
                 ) : (
-                  connectedPlayers.map((player) => (
-                    <motion.div
-                      key={player.userId}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: -10 }}
-                      className="flex items-center gap-2.5"
-                    >
-                      {/* Avatar */}
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={player.avatarUrl ?? getAvatarUrl(player.username)}
-                        alt={player.username}
-                        width={32}
-                        height={32}
-                        className="w-8 h-8 rounded-full bg-white/10 ring-2 ring-white/10"
-                      />
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-white truncate">
-                          {player.username}
-                          {player.userId === currentUserId && (
-                            <span className="ml-1 text-amber-400 text-xs">(tú)</span>
-                          )}
-                        </p>
-                        <div className="flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
-                          <span className="text-xs text-white/40">En línea</span>
+                  connectedPlayers.map((player) => {
+                    const enginePlayer = players.find(p => p.id === player.userId);
+                    const score = enginePlayer?.score ?? 0;
+                    const capturedCount = enginePlayer?.captured.length ?? 0;
+
+                    return (
+                      <motion.div
+                        key={player.userId}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -10 }}
+                        className="flex items-center gap-2.5"
+                      >
+                        {/* Avatar */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={player.avatarUrl ?? getAvatarUrl(player.username)}
+                          alt={player.username}
+                          width={32}
+                          height={32}
+                          className="w-8 h-8 rounded-full bg-white/10 ring-2 ring-white/10 shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-white truncate">
+                            {player.username}
+                            {player.userId === currentUserId && (
+                              <span className="ml-1 text-amber-400 text-xs">(tú)</span>
+                            )}
+                          </p>
+                          <div className="flex items-center gap-2 justify-between mt-0.5">
+                            <div className="flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                              <span className="text-[10px] text-white/40">En línea</span>
+                            </div>
+                            <span className="text-xs text-amber-400 font-bold">{score} pts</span>
+                          </div>
+                          <p className="text-[10px] text-white/30 mt-0.5">Cartas recolectadas: {capturedCount}</p>
                         </div>
-                      </div>
-                    </motion.div>
-                  ))
+                      </motion.div>
+                    );
+                  })
                 )}
               </AnimatePresence>
             </div>
           </div>
         </aside>
 
-        {/* Center — Game board placeholder */}
+        {/* Center — Game board */}
         <div className="flex-1 flex flex-col items-center justify-center">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.2 }}
-            className="text-center"
+            className="text-center w-full"
           >
-            {/* Placeholder card slots */}
-            <div className="flex gap-4 justify-center mb-8">
-              {[0, 1, 2, 3].map((i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.1 * i + 0.3 }}
-                  className="w-16 h-24 sm:w-20 sm:h-28 rounded-xl border-2 border-dashed border-white/20 bg-black/20 card-shadow flex items-center justify-center"
-                >
-                  <span className="text-white/20 text-2xl">🃏</span>
-                </motion.div>
-              ))}
+            {/* Table Cards */}
+            <div className="flex flex-wrap gap-4 justify-center mb-12 min-h-[8rem]">
+              {tableCards.length > 0 ? (
+                tableCards.map((card, idx) => {
+                  const suitName = card.suit.slice(0, -1); // quita la 's' (oros -> oro)
+                  const imagePath = `/cards/${suitName}/${suitName}${card.value}.png`;
+
+                  return (
+                    <motion.div
+                      key={`${card.suit}-${card.value}-${idx}`}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="w-16 h-24 sm:w-20 sm:h-28 rounded-xl bg-transparent  flex items-center justify-center relative overflow-hidden"
+                    >
+                      <Image
+                        src={imagePath}
+                        alt={`${card.value} de ${card.suit}`}
+                        fill
+                        className="object-contain"
+                        unoptimized // en caso de que sean assets locales que cambian
+                      />
+                    </motion.div>
+                  );
+                })
+              ) : (
+                <div className="flex gap-4 justify-center">
+                  {[0, 1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className="w-16 h-24 sm:w-20 sm:h-28 rounded-xl border-2 border-dashed border-white/20 bg-black/20 flex items-center justify-center"
+                    >
+                      <span className="text-white/20 text-2xl">🃏</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <p className="text-white/40 text-sm font-medium">
-              La lógica del juego se implementará aquí
+            <p className="text-white/80 font-medium mb-1">
+              Fase: <span className="uppercase text-amber-400">{phase}</span>
             </p>
-            <p className="text-white/25 text-xs mt-1">
-              Mesa de Caída · {liveTable.status === "waiting" ? "Esperando jugadores" : "En juego"}
+            <p className="text-white/40 text-sm">
+              {liveTable.status === "waiting" ? "Esperando jugadores..." : (isMyTurn ? "¡Es tu turno!" : "Turno del oponente")}
             </p>
           </motion.div>
+
+          {/* Player Hand */}
+          {myPlayer && myPlayer.hand && myPlayer.hand.length > 0 && (
+            <motion.div
+              initial={{ y: 50, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              className="flex justify-center gap-4 mt-12"
+            >
+              {myPlayer.hand.map((card, idx) => {
+                const suitName = card.suit.slice(0, -1);
+                const imagePath = `/cards/${suitName}/${suitName}${card.value}.png`;
+
+                return (
+                  <button
+                    key={`${card.suit}-${card.value}-${idx}`}
+                    onClick={() => handlePlayCard(card)}
+                    disabled={!isMyTurn}
+                    className={`w-[68px] h-[110px] sm:w-[68px] sm:h-[110px] card-shadow  rounded-xs  bg-transparent flex items-center justify-center relative overflow-hidden transition-transform ${!isMyTurn ? "opacity-50 cursor-not-allowed" : "hover:-translate-y-4 hover:ring-2 ring-amber-400"
+                      }`}
+                  >
+                    <Image
+                      src={imagePath}
+                      alt={`${card.value} de ${card.suit}`}
+                      fill
+                      className="object-contain pointer-events-none"
+                      unoptimized
+                    />
+                  </button>
+                );
+              })}
+            </motion.div>
+          )}
         </div>
+
+        {/* Logs Sidebar */}
+        <aside className="lg:w-64 shrink-0 flex flex-col hidden sm:flex">
+          <div className="glass rounded-2xl p-4 flex-1 overflow-hidden flex flex-col max-h-[600px]">
+            <h2 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-3">
+              Registro de jugadas
+            </h2>
+            <div className="space-y-2 overflow-y-auto flex-1 pr-1 text-xs">
+              {logs.length === 0 ? (
+                <p className="text-white/30 italic">No hay jugadas aún...</p>
+              ) : (
+                logs.map((log, i) => (
+                  <div key={i} className="bg-white/5 p-2 rounded border border-white/10 text-white/70">
+                    {log}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </aside>
       </div>
 
       {/* Bottom action bar */}

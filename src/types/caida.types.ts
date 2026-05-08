@@ -31,17 +31,12 @@ export interface Card {
 // ---------------------------------------------------------------------------
 
 /** Which "cantos" (announcements) a player may hold at the start of a round. */
-export type CantoType = "vigia" | "patrulla" | "ronda";
+export type CantoType = "trivilin12" | "casaGrande" | "casaChica" | "registrico" | "maguaro" | "registro" | "vigia" | "patrulla" | "trivilin" | "ronda";
 
 /** A canto the engine detected in a player's hand. */
 export interface Canto {
   type: CantoType;
-  /**
-   * Cards involved.
-   * - vigia   → 2 cards with the same value
-   * - patrulla → 3 cards with the same value
-   * - ronda   → 3 consecutive cards (value-order)
-   */
+  /** Cards involved in the canto */
   cards: Card[];
 }
 
@@ -77,9 +72,9 @@ export interface LastPlay {
 // ---------------------------------------------------------------------------
 
 export type PointEvent =
-  | { type: "caida"; forPlayerId: string }
+  | { type: "caida"; forPlayerId: string; cardValue: CardValue }
   | { type: "limpieza"; forPlayerId: string }
-  | { type: "canto"; forPlayerId: string; canto: CantoType }
+  | { type: "canto"; forPlayerId: string; canto: Canto }
   | { type: "mayorCartas"; forPlayerId: string; extraCards: number };
 
 // ---------------------------------------------------------------------------
@@ -122,4 +117,6 @@ export interface EngineState {
   phase: RoundPhase;
   /** userId of the player who won the game, once phase === "finished". */
   winnerId: string | null;
+  /** userId of the player who dealt the current 40-card deck. */
+  dealerId: string | null;
 }

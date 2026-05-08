@@ -98,9 +98,8 @@ export function LobbyClient({ initialTables }: LobbyClientProps) {
         .from("tables")
         .delete()
         .eq("id", tableId)
-        .eq("host_id", user.id); // extra safety: only owner can delete
+        .eq("host_id", user.id);
       if (error) throw error;
-      // Realtime DELETE event will remove it from local state automatically
     } catch (err) {
       console.error("[LobbyClient] Delete error:", err);
     } finally {
@@ -174,19 +173,18 @@ export function LobbyClient({ initialTables }: LobbyClientProps) {
 
                   <div className="flex items-center gap-2 ml-2 shrink-0">
                     <span
-                      className={`text-xs px-2 py-1 rounded-full font-medium ${
-                        table.status === "waiting"
-                          ? "bg-green-500/20 text-green-400"
-                          : table.status === "playing"
+                      className={`text-xs px-2 py-1 rounded-full font-medium ${table.status === "waiting"
+                        ? "bg-green-500/20 text-green-400"
+                        : table.status === "playing"
                           ? "bg-amber-500/20 text-amber-400"
                           : "bg-white/10 text-white/40"
-                      }`}
+                        }`}
                     >
                       {table.status === "waiting"
                         ? "Abierta"
                         : table.status === "playing"
-                        ? "Jugando"
-                        : "Cerrada"}
+                          ? "Jugando"
+                          : "Cerrada"}
                     </span>
 
                     {/* Delete button — only visible to the host */}
@@ -239,6 +237,7 @@ export function LobbyClient({ initialTables }: LobbyClientProps) {
                             className="flex-1 py-1.5 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-500 text-white disabled:opacity-50 transition-all"
                           >
                             {isDeleting ? "Eliminando..." : "Sí, eliminar"}
+                            {table.id}
                           </button>
                         </div>
                       </div>

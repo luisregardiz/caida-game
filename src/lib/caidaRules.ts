@@ -33,11 +33,16 @@ const CARD_VALUES: CardValue[] = [1, 2, 3, 4, 5, 6, 7, 10, 11, 12];
 
 /** Points awarded per event type. */
 const POINTS: Record<string, number> = {
-  caida: 2,
   limpieza: 1,
-  vigia: 1,
-  patrulla: 2,
-  ronda: 3,
+  trivilin12: 24,
+  casaGrande: 12,
+  casaChica: 11,
+  registrico: 10,
+  maguaro: 9,
+  registro: 8,
+  vigia: 7,
+  patrulla: 6,
+  trivilin: 5,
   mayorCartas: 1, // Base point; extra cards yield additional points per card
 };
 
@@ -238,41 +243,65 @@ export function checkCaida(
  * Priority order: Patrulla > Ronda > Vigía.
  */
 export function detectCantos(hand: Card[]): Canto[] {
-  const cantos: Canto[] = [];
+  if (hand.length !== 3) return [];
+  
+  const values = hand.map(c => c.value);
+  const counts = new Map<CardValue, number>();
+  for (const v of values) {
+    counts.set(v, (counts.get(v) || 0) + 1);
+  }
 
-  // --- Patrulla (3 same value) ---
-  const valueGroups = groupByValue(hand);
-  for (const [, cards] of valueGroups) {
-    if (cards.length === 3) {
-      cantos.push({ type: "patrulla" as CantoType, cards });
-      return cantos; // Patrulla is the highest; no need to check further
+  // Trivilín de 12 (12-12-12)
+  if (counts.get(12) === 3) return [{ type: "trivilin12", cards: hand }];
+  
+  // Casa Grande (1-12-12)
+  if (counts.get(1) === 1 && counts.get(12) === 2) return [{ type: "casaGrande", cards: hand }];
+  
+  // Casa Chica (1-11-11)
+  if (counts.get(1) === 1 && counts.get(11) === 2) return [{ type: "casaChica", cards: hand }];
+  
+  // Registrico (1-10-11)
+  if (counts.has(1) && counts.has(10) && counts.has(11)) return [{ type: "registrico", cards: hand }];
+  
+  // Maguaro (1-10-12)
+  if (counts.has(1) && counts.has(10) && counts.has(12)) return [{ type: "maguaro", cards: hand }];
+  
+  // Registro (1-11-12)
+  if (counts.has(1) && counts.has(11) && counts.has(12)) return [{ type: "registro", cards: hand }];
+  
+  // Patrulla: 3 consecutivos
+  const sortedValues = [...values].sort((a, b) => valueIndex(a) - valueIndex(b));
+  if (valueIndex(sortedValues[1]) === valueIndex(sortedValues[0]) + 1 &&
+      valueIndex(sortedValues[2]) === valueIndex(sortedValues[1]) + 1) {
+    return [{ type: "patrulla", cards: hand }];
+  }
+
+  // Vigía y Trivilín estándar
+  let hasPair = false;
+  let pairValue: CardValue | null = null;
+  let singleValue: CardValue | null = null;
+  
+  for (const [v, c] of counts.entries()) {
+    if (c === 3) {
+      // Trivilín estándar (3 iguales, excepto el 12 que ya se validó)
+      return [{ type: "trivilin", cards: hand }];
+    }
+    if (c === 2) { hasPair = true; pairValue = v; }
+    else if (c === 1) { singleValue = v; }
+  }
+  
+  // Evaluar Vigía o Ronda (par + adyacente o par + distinto)
+  if (hasPair && pairValue !== null && singleValue !== null) {
+    const pIdx = valueIndex(pairValue);
+    const sIdx = valueIndex(singleValue);
+    if (Math.abs(pIdx - sIdx) === 1) {
+      return [{ type: "vigia", cards: hand }];
+    } else {
+      return [{ type: "ronda", cards: hand }];
     }
   }
 
-  // --- Ronda (3 consecutive values) ---
-  if (hand.length === 3) {
-    const sorted = [...hand].sort(
-      (a, b) => valueIndex(a.value) - valueIndex(b.value)
-    );
-    const [a, b, c] = sorted;
-    const idxA = valueIndex(a.value);
-    const idxB = valueIndex(b.value);
-    const idxC = valueIndex(c.value);
-    if (idxB === idxA + 1 && idxC === idxB + 1) {
-      cantos.push({ type: "ronda" as CantoType, cards: sorted });
-      return cantos;
-    }
-  }
-
-  // --- Vigía (2 same value) ---
-  for (const [, cards] of valueGroups) {
-    if (cards.length === 2) {
-      cantos.push({ type: "vigia" as CantoType, cards: cards.slice(0, 2) });
-      break; // Only one vigía per hand
-    }
-  }
-
-  return cantos;
+  return [];
 }
 
 /** Helper: groups cards by value. */
@@ -306,11 +335,22 @@ function groupByValue(cards: Card[]): Map<CardValue, Card[]> {
 export function calculatePoints(event: PointEvent): number {
   switch (event.type) {
     case "caida":
-      return POINTS.caida;
+      if (event.cardValue === 12) return 4;
+      if (event.cardValue === 11) return 3;
+      if (event.cardValue === 10) return 2;
+      return 1;
     case "limpieza":
       return POINTS.limpieza;
     case "canto":
-      return POINTS[event.canto] ?? 0;
+      if (event.canto.type === "ronda") {
+        const pairCard = event.canto.cards.find((c, idx, arr) => arr.filter(x => x.value === c.value).length === 2);
+        if (!pairCard) return 0;
+        if (pairCard.value === 12) return 4;
+        if (pairCard.value === 11) return 3;
+        if (pairCard.value === 10) return 2;
+        return 1;
+      }
+      return POINTS[event.canto.type] ?? 0;
     case "mayorCartas":
       // +1 base for having the majority + 1 per each card over 20
       return POINTS.mayorCartas + Math.max(0, event.extraCards - 20);
