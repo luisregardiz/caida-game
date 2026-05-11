@@ -350,9 +350,10 @@ export const useGameLogicStore = create<GameLogicStore>()(
             phase: allHandsEmpty ? "scoring" : "playing",
         });
 
-        // If all hands are empty, trigger scoring (next deal or game end)
+        // Delay scoring so React renders lastPlay (caída/limpieza) before the
+        // next dealRound() overwrites it with null.
         if (allHandsEmpty) {
-            get().scoreRound();
+            setTimeout(() => get().scoreRound(), 100);
         }
 
         return events;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/config/supabase/client";
@@ -17,6 +17,11 @@ import Image from "next/image";
 interface TableClientProps {
     table: Table;
     currentUserId: string;
+}
+
+function caidaPoints(cardValue: number): number {
+    if (cardValue >= 10) return cardValue - 8; // 10→2, 11→3, 12→4
+    return 1; // 1–7
 }
 
 const phaseLabels: Record<string, string> = {
@@ -85,17 +90,21 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
 
     // ── Caída notification ────────────────────────────────────────────────────
     const [caidaNotif, setCaidaNotif] = useState(false);
+    const [caidaCardValue, setCaidaCardValue] = useState(1);
+    const caidaHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     useEffect(() => {
-        // Wrap in setTimeout so setState is never synchronous inside the effect body
-        let tShow: ReturnType<typeof setTimeout>;
-        let tHide: ReturnType<typeof setTimeout>;
-        if (!lastPlay?.isCaida) {
-            tShow = setTimeout(() => setCaidaNotif(false), 0);
-        } else {
-            tShow = setTimeout(() => setCaidaNotif(true), 0);
-            tHide = setTimeout(() => setCaidaNotif(false), 2500);
-        }
-        return () => { clearTimeout(tShow); clearTimeout(tHide); };
+        if (!lastPlay?.isCaida) return;
+        const val = lastPlay.card.value;
+        // Use a ref so the hide timer survives effect re-runs caused by lastPlay→null
+        if (caidaHideRef.current) clearTimeout(caidaHideRef.current);
+        // Async setState to avoid synchronous update inside effect
+        const show = setTimeout(() => {
+            setCaidaCardValue(val);
+            setCaidaNotif(true);
+        }, 0);
+        caidaHideRef.current = setTimeout(() => setCaidaNotif(false), 2500);
+        return () => clearTimeout(show);
     }, [lastPlay]);
 
     // ── Game logs — derived UI state from external Zustand store changes ──────
@@ -104,26 +113,25 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
     const [lastLoggedDealerRound, setLastLoggedDealerRound] = useState(-1);
 
     useEffect(() => {
-        if (lastPlay) {
-            const playerName =
-                connectedPlayers.find((p) => p.userId === lastPlay.playerId)
-                    ?.username || "Alguien";
-            let newLog = "";
-            if (lastPlay.wentToTable) {
-                newLog = `${playerName}: Lanzó a la mesa ${lastPlay.card.value} de ${lastPlay.card.suit}`;
-            } else {
-                const capturedStr =
-                    lastPlay.capturedCards
-                        ?.map((c) => `${c.value} de ${c.suit}`)
-                        .join(", ") || "";
-                newLog = `${playerName}: Tomó con ${lastPlay.card.value} de ${lastPlay.card.suit} → [${capturedStr}]`;
-                if (lastPlay.isCaida) {
-                    newLog = `💥 ¡CAÍDA! ` + newLog;
-                }
+        if (!lastPlay) return;
+        const playerName =
+            connectedPlayers.find((p) => p.userId === lastPlay.playerId)
+                ?.username || "Alguien";
+        let newLog = "";
+        if (lastPlay.wentToTable) {
+            newLog = `${playerName}: Lanzó a la mesa ${lastPlay.card.value} de ${lastPlay.card.suit}`;
+        } else {
+            const capturedStr =
+                lastPlay.capturedCards
+                    ?.map((c) => `${c.value} de ${c.suit}`)
+                    .join(", ") || "";
+            newLog = `${playerName}: Tomó con ${lastPlay.card.value} de ${lastPlay.card.suit} → [${capturedStr}]`;
+            if (lastPlay.isCaida) {
+                newLog = `💥 ¡CAÍDA! ` + newLog;
             }
-            // eslint-disable-next-line react-compiler/react-compiler
-            setLogs((prev) => [newLog, ...prev].slice(0, 50));
         }
+        const t = setTimeout(() => setLogs((prev) => [newLog, ...prev].slice(0, 50)), 0);
+        return () => clearTimeout(t);
     }, [lastPlay, connectedPlayers]);
 
     useEffect(() => {
@@ -136,14 +144,16 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
             const dealerName =
                 connectedPlayers.find((p) => p.userId === dealerId)?.username ||
                 "El sistema";
-            // eslint-disable-next-line react-compiler/react-compiler
-            setLogs((prev) =>
-                [
-                    `🎲 ${dealerName} ha repartido. (Mano ${round})`,
-                    ...prev,
-                ].slice(0, 50),
-            );
-            setLastLoggedDealerRound(round);
+            const t = setTimeout(() => {
+                setLogs((prev) =>
+                    [
+                        `🎲 ${dealerName} ha repartido. (Mano ${round})`,
+                        ...prev,
+                    ].slice(0, 50),
+                );
+                setLastLoggedDealerRound(round);
+            }, 0);
+            return () => clearTimeout(t);
         }
     }, [dealerId, round, phase, connectedPlayers, lastLoggedDealerRound]);
 
@@ -160,14 +170,17 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                             ?.username || "Alguien";
                     return `🎤 ${name} cantó: ${p.cantos[0].type.toUpperCase()}`;
                 });
-            if (cantosLogs.length > 0) {
-                // eslint-disable-next-line react-compiler/react-compiler
-                setLogs((prev) => [...cantosLogs, ...prev].slice(0, 50));
-            }
-            setLastLoggedRoundCantos(round);
+            const t = setTimeout(() => {
+                if (cantosLogs.length > 0) {
+                    setLogs((prev) => [...cantosLogs, ...prev].slice(0, 50));
+                }
+                setLastLoggedRoundCantos(round);
+            }, 0);
+            return () => clearTimeout(t);
         } else if (round > lastLoggedRoundCantos && players.length > 0) {
             if (players[0].hand.length > 0) {
-                setLastLoggedRoundCantos(round);
+                const t = setTimeout(() => setLastLoggedRoundCantos(round), 0);
+                return () => clearTimeout(t);
             }
         }
     }, [round, players, connectedPlayers, lastLoggedRoundCantos]);
@@ -375,7 +388,7 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                                     ¡CAÍDA!
                                 </p>
                                 <p className="text-amber-400/70 text-xs mt-0.5">
-                                    +2 puntos extra
+                                    +{caidaPoints(caidaCardValue)} punto{caidaPoints(caidaCardValue) !== 1 ? "s" : ""} extra
                                 </p>
                             </div>
                         </div>
