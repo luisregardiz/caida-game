@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { LogOut, Coins } from "lucide-react";
 import { createClient } from "@/config/supabase/client";
 import { useUserStore } from "@/store/userStore";
 import { formatChips } from "@/lib/utils";
@@ -41,7 +42,8 @@ export function Navbar() {
         {user && (
           <div className="flex items-center gap-4">
             {/* Balance */}
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20">
+            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20">
+              <Coins className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span className="text-amber-400 text-sm font-semibold">
                 {formatChips(user.balance)}
               </span>
@@ -53,9 +55,10 @@ export function Navbar() {
             {/* Sign out */}
             <button
               onClick={handleSignOut}
-              className="text-xs text-white/50 hover:text-white/90 transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5"
+              title="Cerrar sesión"
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-white/40 hover:text-white/80 hover:bg-white/5 transition-all"
             >
-              Salir
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         )}

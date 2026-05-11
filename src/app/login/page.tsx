@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { Mail, Send } from "lucide-react";
 import { createClient } from "@/config/supabase/client";
 import { usernameFromEmail, getAvatarUrl } from "@/lib/utils";
 
@@ -125,10 +126,10 @@ export default function LoginPage() {
                 animate={{ opacity: 1 }}
                 className="text-center py-6"
               >
-                <div className="text-3xl mb-3">📬</div>
-                <p className="text-white/80 font-medium">
-                  ¡Revisa tu correo!
-                </p>
+                <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/20 flex items-center justify-center mx-auto mb-4">
+                  <Mail className="w-6 h-6 text-amber-400" />
+                </div>
+                <p className="text-white/80 font-medium">¡Revisa tu correo!</p>
                 <p className="text-white/50 text-sm mt-1">
                   Te enviamos un enlace mágico a <strong>{email}</strong>
                 </p>
@@ -211,9 +212,10 @@ export default function LoginPage() {
                   type="button"
                   onClick={handleMagicLink}
                   disabled={isLoading}
-                  className="w-full py-3 rounded-xl font-medium text-sm border border-white/10 text-white/60 hover:bg-white/5 hover:text-white/80 disabled:opacity-50 transition-all duration-200"
+                  className="w-full py-3 rounded-xl font-medium text-sm border border-white/10 text-white/60 hover:bg-white/5 hover:text-white/80 disabled:opacity-50 transition-all duration-200 flex items-center justify-center gap-2"
                 >
-                  ✉️ Enviar Magic Link
+                  <Send className="w-3.5 h-3.5" />
+                  Enviar Magic Link
                 </button>
               </motion.form>
             )}
