@@ -124,4 +124,6 @@ export interface EngineState {
   winnerId: string | null;
   /** userId of the player who dealt the current 40-card deck. */
   dealerId: string | null;
+  /** userId of the last player who captured cards this round (used for last-round table sweep). */
+  lastCollectorId: string | null;
 }

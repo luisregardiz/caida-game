@@ -105,6 +105,7 @@ const INITIAL_STATE: EngineState = {
     phase: "idle",
     winnerId: null,
     dealerId: null,
+    lastCollectorId: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -251,6 +252,7 @@ export const useGameLogicStore = create<GameLogicStore>()(
             players: updatedPlayers,
             phase: "playing",
             lastPlay: null,
+            lastCollectorId: null,
             round: round + 1,
             currentTurn: nonDealer,
         });
@@ -293,12 +295,14 @@ export const useGameLogicStore = create<GameLogicStore>()(
         }
 
         // --- Capture calculation ---
+        const isLastRound = state.deck.length === 0;
         const { captured, tableAfter, isLimpieza } = calculateCapture(
             card,
             state.tableCards,
         );
 
-        if (isLimpieza) {
+        // Limpieza only scores in non-last rounds (last round uses the sweep rule instead)
+        if (isLimpieza && !isLastRound) {
             events.push({ type: "limpieza", forPlayerId: playerId });
         }
 
@@ -346,6 +350,7 @@ export const useGameLogicStore = create<GameLogicStore>()(
             players: updatedPlayers,
             tableCards: tableAfter,
             lastPlay,
+            lastCollectorId: captured.length > 0 ? playerId : state.lastCollectorId,
             currentTurn: allHandsEmpty ? null : nextTurn,
             phase: allHandsEmpty ? "scoring" : "playing",
         });
@@ -361,19 +366,30 @@ export const useGameLogicStore = create<GameLogicStore>()(
 
     // ── scoreRound ────────────────────────────────────────────────────────────
     scoreRound() {
-        const { players, deck } = get();
+        const { players, deck, tableCards, lastCollectorId } = get();
 
         let updatedPlayers = [...players];
+
+        // --- Last round: sweep remaining table cards to the last collector ---
+        let remainingTableCards = [...tableCards];
+        if (deck.length === 0 && remainingTableCards.length > 0 && lastCollectorId) {
+            updatedPlayers = updatedPlayers.map((p) =>
+                p.id === lastCollectorId
+                    ? { ...p, captured: [...p.captured, ...remainingTableCards] }
+                    : p,
+            );
+            remainingTableCards = [];
+        }
 
         // --- Determine mayorCartas event ONLY if deck is empty (End of Tanda) ---
         if (deck.length === 0) {
             const captureMap = new Map<string, number>(
-                players.map((p) => [p.id, p.captured.length]),
+                updatedPlayers.map((p) => [p.id, p.captured.length]),
             );
             const mayorEvents = resolveMayorCartas(captureMap);
 
             // Apply mayorCartas points
-            updatedPlayers = players.map((p) => {
+            updatedPlayers = updatedPlayers.map((p) => {
                 const ev = mayorEvents.find((e) => e.forPlayerId === p.id);
                 if (!ev) return p;
                 return { ...p, score: p.score + calculatePoints(ev) };
@@ -387,13 +403,13 @@ export const useGameLogicStore = create<GameLogicStore>()(
         const winnerId = checkWinCondition(scoreMap);
 
         if (winnerId) {
-            set({ players: updatedPlayers, phase: "finished", winnerId });
+            set({ players: updatedPlayers, tableCards: remainingTableCards, phase: "finished", winnerId });
             return;
         }
 
         // --- Check if Tanda has ended ---
         if (deck.length === 0) {
-            set({ players: updatedPlayers, phase: "tanda_end" });
+            set({ players: updatedPlayers, tableCards: remainingTableCards, phase: "tanda_end" });
             return;
         }
 

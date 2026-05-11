@@ -33,7 +33,7 @@ const CARD_VALUES: CardValue[] = [1, 2, 3, 4, 5, 6, 7, 10, 11, 12];
 
 /** Points awarded per event type. */
 const POINTS: Record<string, number> = {
-  limpieza: 1,
+  limpieza: 4,
   trivilin12: 24,
   casaGrande: 12,
   casaChica: 11,
