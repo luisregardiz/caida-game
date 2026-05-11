@@ -24,6 +24,36 @@ function caidaPoints(cardValue: number): number {
     return 1; // 1–7
 }
 
+/** Inline badge shown in opponent's info pill */
+function TurnTimerBadge({ seconds }: { seconds: number; total: number }) {
+    const danger = seconds <= 10;
+    return (
+        <span className={`flex items-center gap-1 ml-1 font-bold tabular-nums ${danger ? "text-red-400 animate-pulse" : "text-amber-400"}`}>
+            <span className="text-[10px]">⏱</span>
+            {seconds}s
+        </span>
+    );
+}
+
+/** Progress bar shown below "¡Es tu turno!" */
+function TurnTimerBar({ seconds, total }: { seconds: number; total: number }) {
+    const pct = seconds / total;
+    const danger = seconds <= 10;
+    return (
+        <div className="flex items-center gap-2 mt-1">
+            <div className="w-32 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                <div
+                    className={`h-full rounded-full transition-all duration-1000 ${danger ? "bg-red-500" : "bg-amber-400"}`}
+                    style={{ width: `${pct * 100}%` }}
+                />
+            </div>
+            <span className={`text-[11px] font-bold tabular-nums ${danger ? "text-red-400" : "text-amber-400/70"}`}>
+                {seconds}s
+            </span>
+        </div>
+    );
+}
+
 const phaseLabels: Record<string, string> = {
     idle: "Esperando",
     dealing: "Repartiendo...",
@@ -46,26 +76,26 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
         () =>
             isSinglePlayer
                 ? [
-                      {
-                          userId: currentUserId,
-                          username: user?.username || "Tú",
-                          avatarUrl: null,
-                          status: "connected" as const,
-                          joinedAt: new Date().toISOString(),
-                      },
-                      {
-                          userId: "cpu-bot",
-                          username: "Máquina (Bot)",
-                          avatarUrl: null,
-                          status: "connected" as const,
-                          joinedAt: new Date().toISOString(),
-                      },
-                  ]
+                    {
+                        userId: currentUserId,
+                        username: user?.username || "Tú",
+                        avatarUrl: null,
+                        status: "connected" as const,
+                        joinedAt: new Date().toISOString(),
+                    },
+                    {
+                        userId: "cpu-bot",
+                        username: "Máquina (Bot)",
+                        avatarUrl: null,
+                        status: "connected" as const,
+                        joinedAt: new Date().toISOString(),
+                    },
+                ]
                 : storeConnectedPlayers,
         [isSinglePlayer, currentUserId, user?.username, storeConnectedPlayers],
     );
 
-    useTablePresence(table.id);
+    const { disconnectState } = useTablePresence(table.id);
 
     const {
         myPlayer,
@@ -80,6 +110,8 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
         round,
         winnerId,
         handleNextTanda,
+        turnSecondsLeft,
+        TURN_SECONDS,
     } = useCaidaEngine(table.id);
 
     // Derive opponent presence info for display
@@ -364,6 +396,47 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                 </div>
             </div>
 
+            {/* ── Disconnect grace-period banner ─────────────────────────────────── */}
+            <AnimatePresence>
+                {disconnectState.player && (
+                    <motion.div
+                        key="disconnect-banner"
+                        initial={{ opacity: 0, y: -16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -16 }}
+                        className="fixed top-16 inset-x-0 z-50 flex justify-center px-4"
+                    >
+                        <div className="flex items-center gap-3 bg-red-950/95 backdrop-blur-sm border border-red-500/40 rounded-2xl px-4 py-3 shadow-xl shadow-red-500/10 max-w-sm w-full">
+                            <div className="relative w-9 h-9 shrink-0">
+                                <svg className="w-9 h-9 -rotate-90" viewBox="0 0 36 36">
+                                    <circle cx="18" cy="18" r="15" fill="none" stroke="#ffffff10" strokeWidth="3" />
+                                    <circle
+                                        cx="18" cy="18" r="15" fill="none"
+                                        stroke="#ef4444"
+                                        strokeWidth="3"
+                                        strokeDasharray={`${2 * Math.PI * 15}`}
+                                        strokeDashoffset={`${2 * Math.PI * 15 * (1 - disconnectState.secondsLeft / 30)}`}
+                                        strokeLinecap="round"
+                                        className="transition-all duration-1000"
+                                    />
+                                </svg>
+                                <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-red-400">
+                                    {disconnectState.secondsLeft}
+                                </span>
+                            </div>
+                            <div className="min-w-0">
+                                <p className="text-sm font-semibold text-white leading-snug">
+                                    {disconnectState.player.username} se desconectó
+                                </p>
+                                <p className="text-xs text-red-300/70 mt-0.5">
+                                    La sala se cerrará si no reconecta
+                                </p>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* ── Caída notification overlay ──────────────────────────────────────── */}
             <AnimatePresence>
                 {caidaNotif && (
@@ -385,7 +458,7 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                             </div>
                             <div>
                                 <p className="font-black text-white text-base tracking-wide leading-none">
-                                    ¡CAÍDA!
+                                    CAÍDA
                                 </p>
                                 <p className="text-amber-400/70 text-xs mt-0.5">
                                     +{caidaPoints(caidaCardValue)} punto{caidaPoints(caidaCardValue) !== 1 ? "s" : ""} extra
@@ -437,11 +510,10 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                                                 initial={{ opacity: 0, x: -10 }}
                                                 animate={{ opacity: 1, x: 0 }}
                                                 exit={{ opacity: 0, x: -10 }}
-                                                className={`flex items-center gap-2.5 p-2 rounded-xl transition-all ${
-                                                    isActive
+                                                className={`flex items-center gap-2.5 p-2 rounded-xl transition-all ${isActive
                                                         ? "bg-amber-500/10 border border-amber-500/30"
                                                         : "border border-transparent"
-                                                }`}
+                                                    }`}
                                             >
                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                                 <img
@@ -454,21 +526,20 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                                                     alt={player.username}
                                                     width={32}
                                                     height={32}
-                                                    className={`w-8 h-8 rounded-full bg-white/10 shrink-0 transition-all ${
-                                                        isActive
+                                                    className={`w-8 h-8 rounded-full bg-white/10 shrink-0 transition-all ${isActive
                                                             ? "ring-2 ring-amber-400 turn-pulse"
                                                             : "ring-1 ring-white/10"
-                                                    }`}
+                                                        }`}
                                                 />
                                                 <div className="min-w-0 flex-1">
                                                     <p className="text-sm font-medium text-white truncate">
                                                         {player.username}
                                                         {player.userId ===
                                                             currentUserId && (
-                                                            <span className="ml-1 text-amber-400 text-xs">
-                                                                (tú)
-                                                            </span>
-                                                        )}
+                                                                <span className="ml-1 text-amber-400 text-xs">
+                                                                    (tú)
+                                                                </span>
+                                                            )}
                                                     </p>
                                                     <div className="flex items-center justify-between mt-0.5">
                                                         <span className="text-xs text-amber-400 font-bold">
@@ -496,7 +567,7 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                         {/* Opponent hand — face down */}
                         <div className="flex justify-center gap-2 sm:gap-3">
                             {opponentEngine &&
-                            opponentEngine.hand.length > 0 ? (
+                                opponentEngine.hand.length > 0 ? (
                                 opponentEngine.hand.map((_, idx) => (
                                     <motion.div
                                         key={idx}
@@ -529,11 +600,10 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                         {/* Opponent info pill */}
                         {opponentPresence && (
                             <div
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-300 ${
-                                    !isMyTurn && phase === "playing"
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-300 ${!isMyTurn && phase === "playing"
                                         ? "bg-amber-500/15 border border-amber-500/40 text-amber-300"
                                         : "bg-white/5 border border-white/10 text-white/40"
-                                }`}
+                                    }`}
                             >
                                 <span>{opponentPresence.username}</span>
                                 <span className="text-white/20">•</span>
@@ -545,8 +615,8 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                                     {opponentEngine?.captured.length ?? 0}{" "}
                                     recolectadas
                                 </span>
-                                {!isMyTurn && phase === "playing" && (
-                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse ml-1" />
+                                {!isMyTurn && phase === "playing" && !isSinglePlayer && (
+                                    <TurnTimerBadge seconds={turnSecondsLeft} total={TURN_SECONDS} />
                                 )}
                             </div>
                         )}
@@ -622,6 +692,9 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                                         : "Turno del oponente..."}
                                 </motion.p>
                             )}
+                            {phase === "playing" && isMyTurn && !isSinglePlayer && (
+                                <TurnTimerBar seconds={turnSecondsLeft} total={TURN_SECONDS} />
+                            )}
                             {phase === "idle" &&
                                 liveTable.status === "waiting" && (
                                     <p className="text-white/40 text-sm">
@@ -636,8 +709,8 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                         {/* My hand */}
                         <div className="relative flex items-end justify-center">
                             {myPlayer &&
-                            myPlayer.hand &&
-                            myPlayer.hand.length > 0 ? (
+                                myPlayer.hand &&
+                                myPlayer.hand.length > 0 ? (
                                 <motion.div
                                     initial={{ y: 40, opacity: 0 }}
                                     animate={{ y: 0, opacity: 1 }}
@@ -653,11 +726,10 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                                                     handlePlayCard(card)
                                                 }
                                                 disabled={!isMyTurn}
-                                                className={`w-[62px] h-[96px] sm:w-[72px] sm:h-[112px] card-shadow rounded-md bg-transparent flex items-center justify-center relative overflow-hidden transition-all duration-200 ${
-                                                    !isMyTurn
+                                                className={`w-[62px] h-[96px] sm:w-[72px] sm:h-[112px] card-shadow rounded-md bg-transparent flex items-center justify-center relative overflow-hidden transition-all duration-200 ${!isMyTurn
                                                         ? "opacity-60 cursor-not-allowed"
                                                         : "hover:-translate-y-5 hover:ring-2 ring-amber-400 hover:shadow-amber-500/30"
-                                                }`}
+                                                    }`}
                                             >
                                                 <Image
                                                     src={imagePath}
@@ -710,11 +782,10 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                         {/* My info pill — below the hand so hover animation doesn't collide */}
                         {myPlayer && (
                             <div
-                                className={`mt-3 flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-300 ${
-                                    isMyTurn && phase === "playing"
+                                className={`mt-3 flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-300 ${isMyTurn && phase === "playing"
                                         ? "bg-amber-500/15 border border-amber-500/40 text-amber-300"
                                         : "bg-white/5 border border-white/10 text-white/40"
-                                }`}
+                                    }`}
                             >
                                 <span>{user?.username || "Tú"}</span>
                                 <span className="text-white/20">•</span>
@@ -748,11 +819,10 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                                 logs.map((log, i) => (
                                     <div
                                         key={i}
-                                        className={`p-2 rounded-lg border text-white/60 leading-relaxed ${
-                                            log.startsWith("💥")
+                                        className={`p-2 rounded-lg border text-white/60 leading-relaxed ${log.startsWith("💥")
                                                 ? "bg-red-500/10 border-red-500/30 text-red-300"
                                                 : "bg-white/4 border-white/8"
-                                        }`}
+                                            }`}
                                     >
                                         {log}
                                     </div>
@@ -911,11 +981,10 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                                         return (
                                             <div
                                                 key={p.id}
-                                                className={`p-4 rounded-xl flex justify-between items-center ${
-                                                    isMe
+                                                className={`p-4 rounded-xl flex justify-between items-center ${isMe
                                                         ? "bg-amber-500/10 border border-amber-500/30"
                                                         : "bg-white/5 border border-white/10"
-                                                }`}
+                                                    }`}
                                             >
                                                 <div>
                                                     <p className="font-bold text-white">
@@ -993,11 +1062,10 @@ export function TableClient({ table, currentUserId }: TableClientProps) {
                                     {winnerId === currentUserId ? "🏆" : "💔"}
                                 </div>
                                 <h2
-                                    className={`text-4xl font-black mb-2 ${
-                                        winnerId === currentUserId
+                                    className={`text-4xl font-black mb-2 ${winnerId === currentUserId
                                             ? "text-amber-400"
                                             : "text-red-400"
-                                    }`}
+                                        }`}
                                 >
                                     {winnerId === currentUserId
                                         ? "¡GANASTE!"
